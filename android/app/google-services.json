@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "72015630340",
+    "project_id": "sentinel-circle",
+    "storage_bucket": "sentinel-circle.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:72015630340:android:c30dfd85a074572cdb6551",
+        "android_client_info": {
+          "package_name": "com.sentinelcircle.sentinel_circle"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "72015630340-29ucg8ge0q24m8jhk4bsl595j4cot7cc.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAPvNUVymR0EUbc_wCsFAvdEGQPy-R_CNM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "72015630340-29ucg8ge0q24m8jhk4bsl595j4cot7cc.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
