@@ -14,6 +14,14 @@
       },
       "oauth_client": [
         {
+          "client_id": "72015630340-ur1n370aa0so67hq2qs29ql6k792n8a6.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.sentinelcircle.sentinel_circle",
+            "certificate_hash": "a6f8b16febea16a64982781c82583e8d887a42f6"
+          }
+        },
+        {
           "client_id": "72015630340-29ucg8ge0q24m8jhk4bsl595j4cot7cc.apps.googleusercontent.com",
           "client_type": 3
         }

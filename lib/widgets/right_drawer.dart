@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:sentinel_circle/core/theme_provider.dart';
 import '../services/auth_service.dart';
+import '../screens/trusted_parents_page.dart';
+import '../screens/notifications_page.dart';
 
 class RightDrawer extends StatelessWidget {
   const RightDrawer({super.key});
@@ -81,6 +83,34 @@ class RightDrawer extends StatelessWidget {
                   onTap: () {
                     // Handle report history
                     Navigator.pop(context);
+                  },
+                ),
+                _buildDrawerItem(
+                  context,
+                  icon: Icons.notifications_outlined,
+                  title: 'Notifications',
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const NotificationsPage(),
+                      ),
+                    );
+                  },
+                ),
+                _buildDrawerItem(
+                  context,
+                  icon: Icons.people_outline,
+                  title: 'Trusted Parents',
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const TrustedParentsPage(),
+                      ),
+                    );
                   },
                 ),
                 _buildDrawerItem(

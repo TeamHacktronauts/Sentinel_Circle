@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:sentinel_circle/core/theme_provider.dart';
 import 'package:sentinel_circle/widgets/right_drawer.dart';
 import 'report_screen.dart';
 import 'safety_button_screen.dart';
+import 'chat_screen.dart';
 
 class ModernCard extends StatelessWidget {
   final String title;
@@ -32,16 +35,12 @@ class ModernCard extends StatelessWidget {
       margin: const EdgeInsets.symmetric(vertical: 6),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(20),
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [gradientStart, gradientEnd],
-        ),
+        color: gradientStart,
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.1),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
           ),
         ],
       ),
@@ -58,7 +57,7 @@ class ModernCard extends StatelessWidget {
               children: [
                 // Icon with background
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
+                  padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
                     color: Colors.white.withOpacity(0.2),
                     borderRadius: BorderRadius.circular(12),
@@ -114,7 +113,17 @@ class _HomeScreenState extends State<HomeScreen> {
       key: _scaffoldKey,
       endDrawer: const RightDrawer(),
       appBar: AppBar(
-        title: const Text("Sentinel Circle"),
+        title: Row(
+          children: [
+            Image.asset(
+              'assets/icons/sentinel_logo_bgless.png',
+              height: 40,
+              width: 40,
+            ),
+            const SizedBox(width: 8),
+            const Text("Sentinel Circle"),
+          ],
+        ),
         actions: [
           Padding(
             padding: const EdgeInsets.only(right: 16.0),
@@ -129,38 +138,118 @@ class _HomeScreenState extends State<HomeScreen> {
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
         child: Column(
           children: [
-            ModernCard(
-                title: "Report a Safety Concern",
-                subtitle: "Share your safety concerns with us",
-                icon: Icons.report_problem_outlined,
-                iconColor: Colors.white,
-                gradientStart: const Color(0xFF5E72E4),
-                gradientEnd: const Color(0xFF825EE4),
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => const ReportScreen(),
+            Expanded(
+              child: Column(
+                children: [
+                  ModernCard(
+                      title: "Report a Safety Concern",
+                      subtitle: "Share your safety concerns with us",
+                      icon: Icons.record_voice_over_outlined,
+                      iconColor: Colors.white,
+                      gradientStart: const Color(0xFF5E72E4),
+                      gradientEnd: const Color(0xFF825EE4),
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => const ReportScreen(),
+                          ),
+                        );
+                      },
                     ),
-                  );
-                },
-              ),
-            const SizedBox(height: 12),
-            ModernCard(
-              title: "I Feel Unsafe",
-              subtitle: "Get immediate help and support",
-              icon: Icons.emergency_outlined,
-              iconColor: Colors.white,
-              gradientStart: const Color(0xFFFF6B6B),
-              gradientEnd: const Color(0xFFF9C74F),
-              onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => const SafetyButtonScreen(),
+                  const SizedBox(height: 12),
+                  ModernCard(
+                    title: "I Feel Unsafe",
+                    subtitle: "Get immediate help and support",
+                    icon: Icons.warning_amber_outlined,
+                    iconColor: Colors.white,
+                    gradientStart: const Color(0xFFFF6B6B),
+                    gradientEnd: const Color(0xFFF9C74F),
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const SafetyButtonScreen(),
+                        ),
+                      );
+                    },
                   ),
-                );
-              },
+                ],
+              ),
+            ),
+            const SizedBox(height: 20),
+            Align(
+              alignment: Alignment.bottomRight,
+              child: Container(
+                margin: const EdgeInsets.only(bottom: 50, right: 0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Circular bot button
+                    Container(
+                      height: 80,
+                      width: 80,
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).colorScheme.surface,
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: Theme.of(context).colorScheme.primary.withOpacity(0.2),
+                          width: 1.5,
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Theme.of(context).colorScheme.primary.withOpacity(0.1),
+                            blurRadius: 20,
+                            offset: const Offset(0, 8),
+                          ),
+                          BoxShadow(
+                            color: Theme.of(context).colorScheme.onSurface.withOpacity(0.08),
+                            blurRadius: 12,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      child: GestureDetector(
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const ChatScreen(),
+                            ),
+                          );
+                        },
+                            child: Padding(
+                          padding: const EdgeInsets.all(8.0),
+                          child: Image.asset(
+                            'assets/icons/sentinel_bot.png',
+                            fit: BoxFit.contain,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    // Text badge outside the circle
+                    Container(
+                      constraints: const BoxConstraints(minWidth: 100), // Ensure minimum width for better centering
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF5E72E4),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Text(
+                        "Chat with Syndy",
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
           ],
         ),

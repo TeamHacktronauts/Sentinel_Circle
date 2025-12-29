@@ -1,0 +1,23 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Users can only read/write their own documents
+    match /users/{userId} {
+      allow read, write: if request.auth.uid == userId;
+    }
+
+    // Emergency events can be created by any authenticated user
+    // No one can read emergency events directly (for privacy)
+    match /emergency_events/{eventId} {
+      allow create: if request.auth != null;
+      allow read: if false; // No one reads raw events
+      allow update, delete: if false; // No modifications after creation
+    }
+
+    // Parent devices collection for OneSignal IDs
+    match /parent_devices/{deviceId} {
+      allow read, write: if request.auth != null;
+    }
+  }
+}
