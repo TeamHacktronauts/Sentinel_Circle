@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:onesignal_flutter/onesignal_flutter.dart';
 import 'package:http/http.dart' as http;
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'dart:convert';
 
 class NotificationService {
@@ -14,8 +15,9 @@ class NotificationService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   String? _oneSignalUserId;
   
-  // OneSignal REST API Key (get this from OneSignal Dashboard > Settings > Keys & IDs)
-  static const String _oneSignalApiKey = 'YOUR_ONESIGNAL_REST_API_KEY';
+  // OneSignal REST API Key (from .env file)
+  static final String _oneSignalApiKey = dotenv.env['ONESIGNAL_API_KEY'] ?? 
+      String.fromEnvironment('ONESIGNAL_API_KEY', defaultValue: 'YOUR_ONESIGNAL_REST_API_KEY');
   static const String _appId = '79f23d2b-5e1a-4e67-824d-218381c8ddb9';
 
   // Initialize OneSignal
@@ -78,6 +80,10 @@ class NotificationService {
             'createdAt': FieldValue.serverTimestamp(),
           });
         }
+
+        // Check for and send any queued notifications for this user
+        print('Checking for queued notifications for user ${user.uid}');
+        await checkAndSendQueuedNotifications(user.uid);
       }
     } catch (e) {
       print('Error saving OneSignal ID: $e');
@@ -133,7 +139,7 @@ class NotificationService {
           .cast<Map<String, dynamic>>()
           .toList() ?? [];
 
-      // Find OneSignal IDs for trusted contacts
+      // Process each trusted contact
       for (final contact in trustedContacts) {
         final email = contact['email']?.toString();
         if (email == null || email.isEmpty) continue;
@@ -145,24 +151,32 @@ class NotificationService {
             .limit(1)
             .get();
 
-        if (userQuery.docs.isEmpty) continue;
+        if (userQuery.docs.isEmpty) {
+          print('No user found for email: $email');
+          continue;
+        }
 
         final contactUserDoc = userQuery.docs.first;
         final contactData = contactUserDoc.data();
         final oneSignalId = contactData['oneSignalId']?.toString();
+        final contactUid = contactUserDoc.id;
 
         if (oneSignalId != null && oneSignalId.isNotEmpty) {
-          // Send notification via OneSignal
-          await _sendOneSignalNotification(
+          // User has OneSignal ID - send high priority notification immediately
+          print('Sending emergency notification to $email (Player ID: $oneSignalId)');
+          await _sendHighPriorityEmergencyNotification(
             oneSignalId,
-            'Emergency Alert',
-            'Emergency signal triggered. Location available.',
-            {
-              'type': 'emergency',
-              'emergencyEventId': emergencyEventId,
-              'senderUid': senderUid,
-              'timestamp': DateTime.now().millisecondsSinceEpoch.toString(),
-            },
+            emergencyEventId,
+            senderUid,
+          );
+        } else {
+          // User doesn't have OneSignal ID - queue notification for when they log in
+          print('User $email is offline - queuing emergency notification');
+          await _queueEmergencyNotification(
+            contactUid,
+            email,
+            emergencyEventId,
+            senderUid,
           );
         }
       }
@@ -170,7 +184,137 @@ class NotificationService {
       print('Error sending emergency notification: $e');
     }
   }
-  // Send notification via OneSignal REST API
+  // Send high priority emergency notification via OneSignal REST API
+  Future<void> _sendHighPriorityEmergencyNotification(
+    String playerId,
+    String emergencyEventId,
+    String senderUid,
+  ) async {
+    try {
+      final url = Uri.parse('https://onesignal.com/api/v1/notifications');
+      
+      final response = await http.post(
+        url,
+        headers: {
+          'Content-Type': 'application/json; charset=utf-8',
+          'Authorization': 'Basic $_oneSignalApiKey',
+        },
+        body: jsonEncode({
+          'app_id': _appId,
+          'include_player_ids': [playerId],
+          'headings': {'en': '🚨 EMERGENCY ALERT'},
+          'contents': {'en': 'Emergency signal triggered! Tap to view location and details.'},
+          'data': {
+            'type': 'emergency',
+            'emergencyEventId': emergencyEventId,
+            'senderUid': senderUid,
+            'timestamp': DateTime.now().millisecondsSinceEpoch.toString(),
+            'priority': 'high',
+          },
+          'priority': 10, // Highest priority
+          'ttl': 3600, // Time to live: 1 hour
+          'android_channel_id': 'emergency_alerts',
+          'android_accent_color': 'FF0000',
+          'android_led_color': 'FF0000',
+          'android_sound': 'emergency',
+          'ios_sound': 'emergency.caf',
+        }),
+      );
+      
+      if (response.statusCode == 200) {
+        print('High priority emergency notification sent to $playerId');
+      } else {
+        print('Failed to send emergency notification: ${response.body}');
+      }
+    } catch (e) {
+      print('Error sending high priority emergency notification: $e');
+    }
+  }
+
+  // Queue emergency notification for offline users
+  Future<void> _queueEmergencyNotification(
+    String contactUid,
+    String email,
+    String emergencyEventId,
+    String senderUid,
+  ) async {
+    try {
+      await _firestore.collection('queued_notifications').add({
+        'recipientUid': contactUid,
+        'recipientEmail': email,
+        'emergencyEventId': emergencyEventId,
+        'senderUid': senderUid,
+        'type': 'emergency',
+        'createdAt': FieldValue.serverTimestamp(),
+        'status': 'queued',
+        'priority': 'high',
+        'title': '🚨 EMERGENCY ALERT',
+        'body': 'Emergency signal triggered! Tap to view location and details.',
+      });
+      print('Emergency notification queued for offline user: $email');
+    } catch (e) {
+      print('Error queuing emergency notification: $e');
+    }
+  }
+
+  // Check and send queued notifications when user logs in
+  Future<void> checkAndSendQueuedNotifications(String userUid) async {
+    try {
+      // Get all queued notifications for this user
+      final queuedNotifications = await _firestore
+          .collection('queued_notifications')
+          .where('recipientUid', isEqualTo: userUid)
+          .where('status', isEqualTo: 'queued')
+          .orderBy('createdAt', descending: true)
+          .get();
+
+      if (queuedNotifications.docs.isEmpty) {
+        print('No queued notifications for user $userUid');
+        return;
+      }
+
+      print('Found ${queuedNotifications.docs.length} queued notifications for user $userUid');
+
+      // Get user's OneSignal ID
+      final userDoc = await _firestore.collection('users').doc(userUid).get();
+      if (!userDoc.exists) return;
+
+      final userData = userDoc.data();
+      final oneSignalId = userData?['oneSignalId']?.toString();
+
+      if (oneSignalId == null || oneSignalId.isEmpty) {
+        print('User $userUid still has no OneSignal ID');
+        return;
+      }
+
+      // Send all queued notifications
+      for (final notificationDoc in queuedNotifications.docs) {
+        final notificationData = notificationDoc.data();
+        
+        await _sendOneSignalNotification(
+          oneSignalId,
+          notificationData['title'] ?? 'Queued Notification',
+          notificationData['body'] ?? 'You have a queued notification.',
+          {
+            'type': notificationData['type'] ?? 'queued',
+            'emergencyEventId': notificationData['emergencyEventId'],
+            'senderUid': notificationData['senderUid'],
+            'timestamp': notificationData['createdAt']?.toString(),
+            'priority': notificationData['priority'] ?? 'normal',
+            'queuedAt': notificationData['createdAt']?.toString(),
+          },
+        );
+
+        // Mark notification as sent
+        await notificationDoc.reference.update({'status': 'sent'});
+        print('Sent queued notification to user $userUid');
+      }
+    } catch (e) {
+      print('Error checking queued notifications: $e');
+    }
+  }
+
+  // Send notification via OneSignal REST API (for queued notifications)
   Future<void> _sendOneSignalNotification(
     String playerId,
     String title,
@@ -196,12 +340,12 @@ class NotificationService {
       );
       
       if (response.statusCode == 200) {
-        print('OneSignal notification sent to $playerId');
+        print('Queued notification sent to $playerId');
       } else {
-        print('Failed to send notification: ${response.body}');
+        print('Failed to send queued notification: ${response.body}');
       }
     } catch (e) {
-      print('Error sending OneSignal notification: $e');
+      print('Error sending queued notification: $e');
     }
   }
 

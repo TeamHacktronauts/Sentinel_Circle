@@ -4,6 +4,7 @@ import 'package:sentinel_circle/core/theme_provider.dart';
 import '../services/auth_service.dart';
 import '../screens/trusted_parents_page.dart';
 import '../screens/notifications_page.dart';
+import '../screens/help_support_screen.dart';
 
 class RightDrawer extends StatelessWidget {
   const RightDrawer({super.key});
@@ -127,8 +128,13 @@ class RightDrawer extends StatelessWidget {
                   icon: Icons.help_outline,
                   title: 'Help & Support',
                   onTap: () {
-                    // Handle help
                     Navigator.pop(context);
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const HelpSupportScreen(),
+                      ),
+                    );
                   },
                 ),
                 const Divider(),

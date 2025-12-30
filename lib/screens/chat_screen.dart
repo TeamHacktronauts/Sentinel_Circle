@@ -1,7 +1,110 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:file_picker/file_picker.dart';
+import 'dart:io';
 import '../core/theme_provider.dart';
 import '../services/chat_service.dart';
+
+class MarkdownParser {
+  static List<TextSpan> parseMarkdownText(String text, TextStyle baseStyle) {
+    final spans = <TextSpan>[];
+    final lines = text.split('\n');
+    
+    for (int lineIndex = 0; lineIndex < lines.length; lineIndex++) {
+      final line = lines[lineIndex];
+      
+      // Check if it's a bullet point (starts with * followed by space)
+      if (line.startsWith('* ') && line.length > 2) {
+        // Add bullet point symbol
+        spans.add(TextSpan(
+          text: '• ',
+          style: baseStyle.copyWith(fontWeight: FontWeight.w500),
+        ));
+        
+        // Parse the bullet point content (remove the "* " prefix)
+        final bulletContent = line.substring(2);
+        spans.addAll(_parseInlineFormatting(bulletContent, baseStyle));
+      } else {
+        // Regular line (not bullet point)
+        spans.addAll(_parseInlineFormatting(line, baseStyle));
+      }
+      
+      // Add line break except for the last line
+      if (lineIndex < lines.length - 1) {
+        spans.add(const TextSpan(text: '\n'));
+      }
+    }
+    
+    return spans.isEmpty ? [TextSpan(text: text, style: baseStyle)] : spans;
+  }
+  
+  static List<TextSpan> _parseInlineFormatting(String text, TextStyle baseStyle) {
+    final spans = <TextSpan>[];
+    
+    // Process bold formatting first
+    final boldRegex = RegExp(r'\*\*(.*?)\*\*');
+    int lastIndex = 0;
+    
+    for (final match in boldRegex.allMatches(text)) {
+      // Add text before the bold part
+      if (match.start > lastIndex) {
+        final beforeText = text.substring(lastIndex, match.start);
+        spans.addAll(_parseItalicInText(beforeText, baseStyle));
+      }
+      
+      // Add the bold text
+      spans.add(TextSpan(
+        text: match.group(1)!,
+        style: baseStyle.copyWith(fontWeight: FontWeight.bold),
+      ));
+      
+      lastIndex = match.end;
+    }
+    
+    // Add remaining text after the last bold match
+    if (lastIndex < text.length) {
+      final remainingText = text.substring(lastIndex);
+      spans.addAll(_parseItalicInText(remainingText, baseStyle));
+    }
+    
+    return spans.isEmpty ? [TextSpan(text: text, style: baseStyle)] : spans;
+  }
+  
+  static List<TextSpan> _parseItalicInText(String text, TextStyle baseStyle) {
+    final spans = <TextSpan>[];
+    final italicRegex = RegExp(r'\*(?!\*)(.*?)\*(?!\*)');
+    int lastIndex = 0;
+    
+    for (final match in italicRegex.allMatches(text)) {
+      // Add text before the italic part
+      if (match.start > lastIndex) {
+        spans.add(TextSpan(
+          text: text.substring(lastIndex, match.start),
+          style: baseStyle,
+        ));
+      }
+      
+      // Add the italic text (semi-bold)
+      spans.add(TextSpan(
+        text: match.group(1)!,
+        style: baseStyle.copyWith(fontWeight: FontWeight.w600),
+      ));
+      
+      lastIndex = match.end;
+    }
+    
+    // Add remaining text after the last italic match
+    if (lastIndex < text.length) {
+      spans.add(TextSpan(
+        text: text.substring(lastIndex),
+        style: baseStyle,
+      ));
+    }
+    
+    return spans.isEmpty ? [TextSpan(text: text, style: baseStyle)] : spans;
+  }
+}
 
 class TypingIndicator extends StatefulWidget {
   final bool isDarkMode;
@@ -118,6 +221,7 @@ class ChatMessage extends StatelessWidget {
   final bool isDarkMode;
   final int index;
   final List<Map<String, dynamic>> messages;
+  final List<File>? imageFiles;
 
   const ChatMessage({
     super.key,
@@ -127,6 +231,7 @@ class ChatMessage extends StatelessWidget {
     required this.isDarkMode,
     required this.index,
     required this.messages,
+    this.imageFiles,
   });
 
   @override
@@ -181,13 +286,40 @@ class ChatMessage extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        text,
-                        style: TextStyle(
-                          color: isUser 
-                              ? Colors.white 
-                              : Theme.of(context).textTheme.bodyLarge?.color ?? Colors.black87,
-                          fontSize: 16,
+                      // Display multiple images
+                      if (imageFiles != null && imageFiles!.isNotEmpty)
+                        Container(
+                          constraints: BoxConstraints(
+                            maxWidth: MediaQuery.of(context).size.width * 0.6,
+                          ),
+                          margin: const EdgeInsets.only(bottom: 8),
+                          child: Wrap(
+                            spacing: 4,
+                            runSpacing: 4,
+                            children: imageFiles!.take(3).map((imageFile) => Container(
+                              width: (MediaQuery.of(context).size.width * 0.6 - 16) / 2,
+                              height: 100,
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(12),
+                                child: Image.file(
+                                  imageFile,
+                                  fit: BoxFit.cover,
+                                ),
+                              ),
+                            )).toList(),
+                          ),
+                        ),
+                      RichText(
+                        text: TextSpan(
+                          children: MarkdownParser.parseMarkdownText(
+                            text,
+                            TextStyle(
+                              color: isUser 
+                                  ? Colors.white 
+                                  : Theme.of(context).textTheme.bodyLarge?.color ?? Colors.black87,
+                              fontSize: 16,
+                            ),
+                          ),
                         ),
                       ),
                       const SizedBox(height: 4),
@@ -203,14 +335,6 @@ class ChatMessage extends StatelessWidget {
                               fontSize: 12,
                             ),
                           ),
-                          if (isUser) ...[
-                            const SizedBox(width: 4),
-                            Icon(
-                              Icons.done_all,
-                              size: 14,
-                              color: Colors.white70,
-                            ),
-                          ],
                         ],
                       ),
                     ],
@@ -325,7 +449,12 @@ class _ChatScreenState extends State<ChatScreen> {
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   final ChatService _chatService = ChatService();
+  final ImagePicker _imagePicker = ImagePicker();
   bool _isLoading = false;
+  File? _selectedImage;
+  File? _selectedVideo;
+  List<File> _selectedImages = [];
+  File? _selectedPdf;
   final List<Map<String, dynamic>> _messages = [
     {
       'text': "Hello! I'm Syndy, your AI safety assistant. How can I help you today?",
@@ -341,18 +470,120 @@ class _ChatScreenState extends State<ChatScreen> {
     super.dispose();
   }
 
+  Future<void> _pickCameraImage() async {
+    try {
+      final XFile? pickedFile = await _imagePicker.pickImage(
+        source: ImageSource.camera,
+        maxWidth: 1024,
+        maxHeight: 1024,
+        imageQuality: 85,
+      );
+      
+      if (pickedFile != null) {
+        setState(() {
+          // Add new image to existing images, max 3 total
+          final newImages = List<File>.from(_selectedImages);
+          newImages.add(File(pickedFile.path));
+          _selectedImages = newImages.take(3).toList();
+          _selectedVideo = null;
+          _selectedPdf = null;
+        });
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Failed to capture image')),
+      );
+    }
+  }
+
+  Future<void> _pickImages() async {
+    try {
+      final List<XFile>? pickedFiles = await _imagePicker.pickMultiImage(
+        maxWidth: 1024,
+        maxHeight: 1024,
+        imageQuality: 85,
+      );
+      
+      if (pickedFiles != null && pickedFiles.isNotEmpty) {
+        setState(() {
+          _selectedImages = pickedFiles.take(3).map((file) => File(file.path)).toList();
+          _selectedVideo = null;
+          _selectedPdf = null;
+        });
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Failed to pick images')),
+      );
+    }
+  }
+
+
+
+  void _clearAllFiles() {
+    setState(() {
+      _selectedImages = [];
+    });
+  }
+
+  void _showFilePickerOptions() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (BuildContext context) {
+        return Container(
+          margin: EdgeInsets.only(
+            bottom: MediaQuery.of(context).viewInsets.bottom + 80, // Add extra padding from bottom
+            left: 16,
+            right: 16,
+          ),
+          decoration: BoxDecoration(
+            color: Theme.of(context).scaffoldBackgroundColor,
+            borderRadius: BorderRadius.circular(16),
+          ),
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.camera_alt),
+                title: const Text('Take Photo'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _pickCameraImage();
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.photo_library),
+                title: const Text('Pick Images (Max 3)'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _pickImages();
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   void _sendMessage() async {
-    if (_messageController.text.trim().isEmpty || _isLoading) return;
+    if (_messageController.text.trim().isEmpty && _selectedImages.isEmpty || _isLoading) return;
 
     final userMessage = _messageController.text;
+    final currentImages = List<File>.from(_selectedImages);
     
     setState(() {
       _messages.add({
         'text': userMessage,
         'isUser': true,
         'timestamp': DateTime.now(),
+        'imageFiles': currentImages,
       });
       _isLoading = true;
+      _clearAllFiles();
     });
 
     _messageController.clear();
@@ -362,7 +593,11 @@ class _ChatScreenState extends State<ChatScreen> {
       // Get current user ID (you might want to get this from your auth service)
       final userId = 'user_${DateTime.now().millisecondsSinceEpoch}';
       
-      final aiResponse = await _chatService.sendMessage(userMessage, userId);
+      final aiResponse = await _chatService.sendMessage(
+        userMessage.isNotEmpty ? userMessage : "What's in this image?",
+        userId,
+        imageFiles: currentImages.isNotEmpty ? currentImages : null,
+      );
       
       if (mounted) {
         setState(() {
@@ -463,6 +698,7 @@ class _ChatScreenState extends State<ChatScreen> {
                               isDarkMode: isDarkMode,
                               index: index,
                               messages: _messages,
+                              imageFiles: message['imageFiles'] as List<File>?,
                             );
                           },
                         ),
@@ -499,59 +735,193 @@ class _ChatScreenState extends State<ChatScreen> {
             ),
           ],
         ),
-        child: Row(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Expanded(
-              child: TextField(
-                controller: _messageController,
-                enabled: !_isLoading,
-                style: TextStyle(
-                  color: isDarkMode ? Colors.white : Colors.black87,
+            // File previews
+            if (_selectedImages.isNotEmpty)
+              Container(
+                margin: const EdgeInsets.only(bottom: 12),
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: isDarkMode ? Colors.grey[800] : Colors.grey[100],
+                  borderRadius: BorderRadius.circular(12),
                 ),
-                decoration: InputDecoration(
-                  hintText: _isLoading ? "Syndy is typing..." : "Type your message...",
-                  hintStyle: TextStyle(
-                    color: isDarkMode ? Colors.grey[400] : Colors.grey[600],
-                  ),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(25),
-                    borderSide: BorderSide.none,
-                  ),
-                  filled: true,
-                  fillColor: isDarkMode ? Colors.grey[800] : Colors.grey[100],
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 20,
-                    vertical: 10,
-                  ),
-                ),
-                onSubmitted: (_) => _sendMessage(),
-              ),
-            ),
-            const SizedBox(width: 8),
-            Container(
-              decoration: BoxDecoration(
-                color: _isLoading ? Colors.grey : Theme.of(context).primaryColor,
-                shape: BoxShape.circle,
-              ),
-              child: IconButton(
-                onPressed: _isLoading ? null : _sendMessage,
-                icon: _isLoading
-                    ? SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                        ),
-                      )
-                    : const Icon(
-                        Icons.send,
-                        color: Colors.white,
+                child: Column(
+                  children: [
+                    if (_selectedImages.isNotEmpty)
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Images (${_selectedImages.length})',
+                            style: TextStyle(
+                              color: isDarkMode ? Colors.white70 : Colors.black54,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Wrap(
+                            spacing: 4,
+                            runSpacing: 4,
+                            children: _selectedImages.take(3).map((image) => Container(
+                              width: 60,
+                              height: 60,
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(8),
+                                child: Image.file(
+                                  image,
+                                  fit: BoxFit.cover,
+                                ),
+                              ),
+                            )).toList(),
+                          ),
+                        ],
                       ),
+                    const SizedBox(height: 8),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        TextButton(
+                          onPressed: _clearAllFiles,
+                          child: Text(
+                            'Clear All',
+                            style: TextStyle(
+                              color: Theme.of(context).primaryColor,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
+            Row(
+              children: [
+                // Multimodal file picker button
+                Container(
+                  decoration: BoxDecoration(
+                    color: isDarkMode ? Colors.grey[800] : Colors.grey[200],
+                    shape: BoxShape.circle,
+                  ),
+                  child: IconButton(
+                    onPressed: _isLoading ? null : _showFilePickerOptions,
+                    icon: Icon(
+                      Icons.attach_file,
+                      color: isDarkMode ? Colors.white : Colors.black87,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: TextField(
+                    controller: _messageController,
+                    enabled: !_isLoading,
+                    style: TextStyle(
+                      color: isDarkMode ? Colors.white : Colors.black87,
+                    ),
+                    decoration: InputDecoration(
+                      hintText: _isLoading ? "Syndy is typing..." : "Type your message or attach files...",
+                      hintStyle: TextStyle(
+                        color: isDarkMode ? Colors.grey[400] : Colors.grey[600],
+                      ),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(25),
+                        borderSide: BorderSide.none,
+                      ),
+                      filled: true,
+                      fillColor: isDarkMode ? Colors.grey[800] : Colors.grey[100],
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 20,
+                        vertical: 10,
+                      ),
+                    ),
+                    onSubmitted: (_) => _sendMessage(),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Container(
+                  decoration: BoxDecoration(
+                    color: _isLoading ? Colors.grey : Theme.of(context).primaryColor,
+                    shape: BoxShape.circle,
+                  ),
+                  child: IconButton(
+                    onPressed: _isLoading ? null : _sendMessage,
+                    icon: _isLoading
+                        ? SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                            ),
+                          )
+                        : const Icon(
+                            Icons.send,
+                            color: Colors.white,
+                          ),
+                  ),
+                ),
+              ],
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildFilePreview(String type, String fileName, IconData icon, Color color) {
+    final isDarkMode = Provider.of<ThemeProvider>(context, listen: false).isDarkMode;
+    
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: isDarkMode ? Colors.grey[700] : Colors.grey[200],
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.2),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: Icon(
+              icon,
+              color: color,
+              size: 20,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  type,
+                  style: TextStyle(
+                    color: isDarkMode ? Colors.white70 : Colors.black54,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                Text(
+                  fileName,
+                  style: TextStyle(
+                    color: isDarkMode ? Colors.white : Colors.black87,
+                    fontSize: 12,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

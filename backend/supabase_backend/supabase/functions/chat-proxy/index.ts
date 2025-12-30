@@ -6,19 +6,29 @@ const PROJECT_URL = Deno.env.get("PROJECT_URL")!
 
 serve(async (req) => {
   try {
-    const { message, user_id = "anonymous" } = await req.json()
+    const {
+      message,
+      user_id = "anonymous",
+      images = []    // base64 images array
+    } = await req.json()
+    
     const userMessage = message?.toString().trim()
     
-    if (!userMessage) {
+    // Detect visual input
+    const hasImages = images.length > 0
+
+    const USE_VL_MODEL = hasImages
+    
+    if (!userMessage && !USE_VL_MODEL) {
       return new Response(
-        JSON.stringify({ error: "No message provided" }),
+        JSON.stringify({ error: "No message or visual input provided" }),
         { status: 400, headers: { "Content-Type": "application/json" } }
       )
     }
 
     // ---------- CHILD SAFETY MODERATION ----------
     const bannedWords = ["sex", "porn", "nude", "kill", "suicide", "rape", "drugs", "alcohol"]
-    const flagged = bannedWords.some(word => userMessage.toLowerCase().includes(word))
+    const flagged = userMessage ? bannedWords.some(word => userMessage.toLowerCase().includes(word)) : false
 
     if (flagged) {
       await fetch(`${PROJECT_URL}/rest/v1/moderation_logs`, {
@@ -29,18 +39,24 @@ serve(async (req) => {
           "Content-Type": "application/json"
         },
         body: JSON.stringify({
-          user_input: userMessage,
+          user_input: userMessage || "[Visual input]",
           reason: "Child safety filter"
         })
       })
 
       return new Response(
         JSON.stringify({
-          reply: "I’m here to help keep you safe 😊 Please talk to a trusted adult."
+          reply: "I can't help with that. I'm here to help keep you safe 😊 Please talk to a trusted adult."
         }),
         { headers: { "Content-Type": "application/json" } }
       )
     }
+
+    // ---------- MODEL ROUTING ----------
+    const model = USE_VL_MODEL
+      ? "nvidia/nemotron-nano-12b-v2-vl:free"
+      : "google/gemma-3-27b-it:free"
+
 
     // ---------- OPENROUTER CALL ----------
     const systemPrompt = `
@@ -49,6 +65,28 @@ Never provide sexual, violent, or harmful content.
 Encourage safety, kindness, and trusted adults.
 `
 
+    // ---------- BUILD MULTIMODAL USER CONTENT ----------
+    const userContent = []
+
+    if (userMessage) {
+      userContent.push({ type: "text", text: userMessage })
+    }
+
+    images.forEach((base64Image: string) => {
+      userContent.push({
+        type: "image_url",
+        image_url: {
+          url: `data:image/jpeg;base64,${base64Image}` 
+        }
+      })
+    })
+
+    // ---------- MESSAGE PAYLOAD HANDLING ----------
+    const userMessagePayload =
+      userContent.length === 1 && userContent[0].type === "text"
+        ? userContent[0].text
+        : userContent
+
     const aiRes = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -56,11 +94,12 @@ Encourage safety, kindness, and trusted adults.
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
-        model: "google/gemma-3-27b-it:free",
+        model,
         messages: [
           { role: "system", content: systemPrompt },
-          { role: "user", content: userMessage }
-        ]
+          { role: "user", content: userMessagePayload }
+        ],
+        reasoning: USE_VL_MODEL ? { enabled: true } : undefined
       })
     })
 
@@ -78,6 +117,10 @@ Encourage safety, kindness, and trusted adults.
     const reply = aiData.choices[0].message.content
 
     // ---------- LOG CHAT TO SUPABASE ----------
+    const logMessage =
+      userMessage ||
+      (USE_VL_MODEL ? "[Visual input sent]" : "")
+    
     await fetch(`${PROJECT_URL}/rest/v1/chats`, {
       method: "POST",
       headers: {
@@ -86,7 +129,7 @@ Encourage safety, kindness, and trusted adults.
         "Content-Type": "application/json"
       },
       body: JSON.stringify([
-        { user_id, role: "user", content: userMessage },
+        { user_id, role: "user", content: logMessage },
         { user_id, role: "assistant", content: reply }
       ])
     })

@@ -121,6 +121,14 @@ class _TrustedParentsPageState extends State<TrustedParentsPage> {
       return;
     }
 
+    // Check if user has reached the maximum limit of 5 trusted parents
+    if (_trustedContacts.length >= 5) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Maximum limit of 5 trusted parents reached. Please remove an existing contact to add a new one.')),
+      );
+      return;
+    }
+
     try {
       final user = _auth.currentUser;
       if (user != null) {
@@ -179,16 +187,14 @@ class _TrustedParentsPageState extends State<TrustedParentsPage> {
         backgroundColor: Theme.of(context).colorScheme.primary,
         foregroundColor: Colors.white,
       ),
-      body: Padding(
-        padding: EdgeInsets.only(
-          left: 16.0,
-          right: 16.0,
-          top: 16.0,
-          bottom: MediaQuery.of(context).viewInsets.bottom + 16.0,
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+      body: SafeArea(
+        child: SingleChildScrollView(
+          reverse: true, // Ensures content stays above keyboard
+          child: Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
             // Add Contact Section
             Card(
               child: Padding(
@@ -246,50 +252,75 @@ class _TrustedParentsPageState extends State<TrustedParentsPage> {
             const SizedBox(height: 20),
             
             // Trusted Emails List Section
-            Text(
-              'Trusted Parents List',
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.bold,
-              ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Trusted Parents List',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                Text(
+                  '${_trustedContacts.length}/5',
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: _trustedContacts.length >= 5 ? Colors.red : Colors.grey[600],
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
             ),
             const SizedBox(height: 12),
             
-            Expanded(
+            Container(
+              constraints: BoxConstraints(
+                minHeight: 200, // Minimum height for the list area
+              ),
               child: _isLoading
                   ? const Center(child: CircularProgressIndicator())
                   : _trustedContacts.isEmpty
-                      ? Card(
-                          child: Padding(
-                            padding: const EdgeInsets.all(32.0),
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(
-                                  Icons.people_outline,
-                                  size: 64,
-                                  color: Colors.grey[400],
-                                ),
-                                const SizedBox(height: 16),
-                                Text(
-                                  'No trusted parents added yet',
-                                  style: TextStyle(
-                                    color: Colors.grey[600],
-                                    fontSize: 16,
+                      ? SizedBox(
+                          width: double.infinity,
+                          child: Card(
+                            margin: EdgeInsets.zero,
+                            child: Padding(
+                              padding: const EdgeInsets.all(32.0),
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                crossAxisAlignment: CrossAxisAlignment.center,
+                                children: [
+                                  Icon(
+                                    Icons.people_outline,
+                                    size: 64,
+                                    color: Colors.grey[400],
                                   ),
-                                ),
-                                const SizedBox(height: 8),
-                                Text(
-                                  'Add parent contacts above to get started',
-                                  style: TextStyle(
-                                    color: Colors.grey[500],
-                                    fontSize: 14,
+                                  const SizedBox(height: 16),
+                                  Text(
+                                    'No trusted parents added yet',
+                                    style: TextStyle(
+                                      color: Colors.grey[600],
+                                      fontSize: 16,
+                                    ),
                                   ),
-                                ),
-                              ],
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    'Add parent contacts above to get started (Maximum 5 parents)',
+                                    style: TextStyle(
+                                      color: Colors.grey[500],
+                                      fontSize: 14,
+                                    ),
+                                    textAlign: TextAlign.center,
+                                  ),
+                                  // Add extra bottom padding for navigation bar
+                                  const SizedBox(height: 100),
+                                ],
+                              ),
                             ),
                           ),
                         )
                       : ListView.builder(
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
                           itemCount: _trustedContacts.length,
                           itemBuilder: (context, index) {
                             final contact = _trustedContacts[index];
@@ -343,7 +374,9 @@ class _TrustedParentsPageState extends State<TrustedParentsPage> {
                           },
                         ),
             ),
-          ],
+              ],
+            ),
+          ),
         ),
       ),
     );

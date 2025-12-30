@@ -5,6 +5,7 @@ import 'screens/login_page.dart';
 import 'screens/signup_page.dart';
 import 'screens/forgot_password_page.dart';
 import 'screens/home_screen.dart';
+import 'screens/help_support_screen.dart';
 import 'theme/theme.dart';
 import 'core/theme_provider.dart';
 
@@ -35,6 +36,7 @@ class SentinelCircleApp extends StatelessWidget {
               '/signup': (context) => const SignupPage(),
               '/forgot-password': (context) => const ForgotPasswordPage(),
               '/home': (context) => const HomeScreen(),
+              '/help-support': (context) => const HelpSupportScreen(),
             },
           );
         },
