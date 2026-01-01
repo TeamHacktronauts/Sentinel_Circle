@@ -3,16 +3,45 @@ service cloud.firestore {
   match /databases/{database}/documents {
 
     // Users can only read/write their own documents
+    // Allow email queries for finding trusted contacts
     match /users/{userId} {
-      allow read, write: if request.auth.uid == userId;
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+      allow list: if request.auth != null; // Allow email queries for trusted contacts
+      allow get: if request.auth != null && request.auth.uid == userId; // Explicitly allow get for own document
+    }
+
+    // Public email index for trusted parent verification (only contains emails, no sensitive data)
+    match /user_emails/{emailHash} {
+      allow get, create: if request.auth != null;
     }
 
     // Emergency events can be created by any authenticated user
-    // No one can read emergency events directly (for privacy)
+    // Can be read by notification service for sending notifications
     match /emergency_events/{eventId} {
       allow create: if request.auth != null;
-      allow read: if false; // No one reads raw events
+      allow read: if request.auth != null; // Allow read for notification service
       allow update, delete: if false; // No modifications after creation
+    }
+
+    // User-specific notifications - only the owner can access their notifications
+    match /user_notifications/{userId} {
+      // Users can only access their own notification collection
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+      
+      // Allow notification service to create notifications for any user
+      allow create: if request.auth != null && 
+        request.resource.data.senderUid != null &&
+        request.resource.data.recipientUid == userId;
+      
+      // Nested notifications subcollection
+      match /notifications/{notificationId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+        
+        // Allow notification service to create notifications for any user
+        allow create: if request.auth != null && 
+          request.resource.data.senderUid != null &&
+          request.resource.data.recipientUid == userId;
+      }
     }
 
     // Parent devices collection for OneSignal IDs

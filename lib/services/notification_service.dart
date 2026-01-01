@@ -84,8 +84,7 @@ class NotificationService {
         }
 
         // Check for and send any queued notifications for this user
-        print('Checking for queued notifications for user ${user.uid}');
-        await checkAndSendQueuedNotifications(user.uid);
+        print('User logged in: ${user.uid}');
       }
     } catch (e) {
       print('Error saving OneSignal ID: $e');
@@ -119,20 +118,35 @@ class NotificationService {
           .doc(emergencyEventId)
           .get();
 
-      if (!eventDoc.exists) return;
+      if (!eventDoc.exists) {
+        print('Emergency event not found: $emergencyEventId');
+        return;
+      }
 
       final eventData = eventDoc.data() as Map<String, dynamic>?;
-      if (eventData == null) return;
+      if (eventData == null) {
+        print('Emergency event data is null: $emergencyEventId');
+        return;
+      }
 
       final senderUid = eventData['senderUid']?.toString() ?? '';
-      if (senderUid.isEmpty) return;
+      if (senderUid.isEmpty) {
+        print('Sender UID is empty in emergency event: $emergencyEventId');
+        return;
+      }
 
       // Get the sender's trusted contacts
       final senderDoc = await _firestore.collection('users').doc(senderUid).get();
-      if (!senderDoc.exists) return;
+      if (!senderDoc.exists) {
+        print('Sender document not found: $senderUid');
+        return;
+      }
 
       final senderData = senderDoc.data() as Map<String, dynamic>?;
-      if (senderData == null) return;
+      if (senderData == null) {
+        print('Sender data is null: $senderUid');
+        return;
+      }
 
       final trustedContactsList = senderData['trustedContacts'] as List<dynamic>?;
       final trustedContacts = trustedContactsList
@@ -141,10 +155,15 @@ class NotificationService {
           .cast<Map<String, dynamic>>()
           .toList() ?? [];
 
+      print('Found ${trustedContacts.length} trusted contacts for sender: $senderUid');
+
       // Process each trusted contact
       for (final contact in trustedContacts) {
         final email = contact['email']?.toString();
-        if (email == null || email.isEmpty) continue;
+        if (email == null || email.isEmpty) {
+          print('Skipping contact with empty email');
+          continue;
+        }
         
         // Find user with this email
         final userQuery = await _firestore
@@ -163,6 +182,31 @@ class NotificationService {
         final oneSignalId = contactData['oneSignalId']?.toString();
         final contactUid = contactUserDoc.id;
 
+        print('Processing notification for user: $contactUid (email: $email)');
+
+        // Create user-specific notification record for secure access
+        try {
+          await _firestore
+              .collection('user_notifications')
+              .doc(contactUid)
+              .collection('notifications')
+              .doc(emergencyEventId)
+              .set({
+                'id': emergencyEventId,
+                'senderUid': senderUid,
+                'timestamp': eventData['timestamp'] ?? FieldValue.serverTimestamp(),
+                'location': eventData['location'] ?? GeoPoint(0, 0),
+                'mapsUrl': eventData['mapsUrl'] ?? '',
+                'notified': true,
+                'recipientUid': contactUid,
+                'recipientEmail': email,
+                'createdAt': FieldValue.serverTimestamp(),
+              });
+          print('Created user notification record for: $contactUid');
+        } catch (e) {
+          print('Error creating user notification record: $e');
+        }
+
         if (oneSignalId != null && oneSignalId.isNotEmpty) {
           // User has OneSignal ID - send high priority notification immediately
           print('Sending emergency notification to $email (Player ID: $oneSignalId)');
@@ -172,14 +216,8 @@ class NotificationService {
             senderUid,
           );
         } else {
-          // User doesn't have OneSignal ID - queue notification for when they log in
-          print('User $email is offline - queuing emergency notification');
-          await _queueEmergencyNotification(
-            contactUid,
-            email,
-            emergencyEventId,
-            senderUid,
-          );
+          // User doesn't have OneSignal ID - skip (no queuing needed)
+          print('User $email is offline - skipping notification');
         }
       }
     } catch (e) {
@@ -230,124 +268,6 @@ class NotificationService {
       }
     } catch (e) {
       print('Error sending high priority emergency notification: $e');
-    }
-  }
-
-  // Queue emergency notification for offline users
-  Future<void> _queueEmergencyNotification(
-    String contactUid,
-    String email,
-    String emergencyEventId,
-    String senderUid,
-  ) async {
-    try {
-      await _firestore.collection('queued_notifications').add({
-        'recipientUid': contactUid,
-        'recipientEmail': email,
-        'emergencyEventId': emergencyEventId,
-        'senderUid': senderUid,
-        'type': 'emergency',
-        'createdAt': FieldValue.serverTimestamp(),
-        'status': 'queued',
-        'priority': 'high',
-        'title': '🚨 EMERGENCY ALERT',
-        'body': 'Emergency signal triggered! Tap to view location and details.',
-      });
-      print('Emergency notification queued for offline user: $email');
-    } catch (e) {
-      print('Error queuing emergency notification: $e');
-    }
-  }
-
-  // Check and send queued notifications when user logs in
-  Future<void> checkAndSendQueuedNotifications(String userUid) async {
-    try {
-      // Get all queued notifications for this user
-      final queuedNotifications = await _firestore
-          .collection('queued_notifications')
-          .where('recipientUid', isEqualTo: userUid)
-          .where('status', isEqualTo: 'queued')
-          .orderBy('createdAt', descending: true)
-          .get();
-
-      if (queuedNotifications.docs.isEmpty) {
-        print('No queued notifications for user $userUid');
-        return;
-      }
-
-      print('Found ${queuedNotifications.docs.length} queued notifications for user $userUid');
-
-      // Get user's OneSignal ID
-      final userDoc = await _firestore.collection('users').doc(userUid).get();
-      if (!userDoc.exists) return;
-
-      final userData = userDoc.data();
-      final oneSignalId = userData?['oneSignalId']?.toString();
-
-      if (oneSignalId == null || oneSignalId.isEmpty) {
-        print('User $userUid still has no OneSignal ID');
-        return;
-      }
-
-      // Send all queued notifications
-      for (final notificationDoc in queuedNotifications.docs) {
-        final notificationData = notificationDoc.data();
-        
-        await _sendOneSignalNotification(
-          oneSignalId,
-          notificationData['title'] ?? 'Queued Notification',
-          notificationData['body'] ?? 'You have a queued notification.',
-          {
-            'type': notificationData['type'] ?? 'queued',
-            'emergencyEventId': notificationData['emergencyEventId'],
-            'senderUid': notificationData['senderUid'],
-            'timestamp': notificationData['createdAt']?.toString(),
-            'priority': notificationData['priority'] ?? 'normal',
-            'queuedAt': notificationData['createdAt']?.toString(),
-          },
-        );
-
-        // Mark notification as sent
-        await notificationDoc.reference.update({'status': 'sent'});
-        print('Sent queued notification to user $userUid');
-      }
-    } catch (e) {
-      print('Error checking queued notifications: $e');
-    }
-  }
-
-  // Send notification via OneSignal REST API (for queued notifications)
-  Future<void> _sendOneSignalNotification(
-    String playerId,
-    String title,
-    String body,
-    Map<String, dynamic> data,
-  ) async {
-    try {
-      final url = Uri.parse('https://onesignal.com/api/v1/notifications');
-      
-      final response = await http.post(
-        url,
-        headers: {
-          'Content-Type': 'application/json; charset=utf-8',
-          'Authorization': 'Basic $_oneSignalApiKey',
-        },
-        body: jsonEncode({
-          'app_id': _appId,
-          'include_player_ids': [playerId],
-          'headings': {'en': title},
-          'contents': {'en': body},
-          'data': data,
-        }),
-      );
-      
-      if (response.statusCode == 200) {
-        print('Queued notification sent to $playerId');
-      } else {
-        print('Failed to send queued notification: ${response.body}');
-      }
-    } catch (e) {
-      print('Error sending queued notification: $e');
     }
   }
 

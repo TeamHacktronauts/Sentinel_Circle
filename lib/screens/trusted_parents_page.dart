@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:crypto/crypto.dart';
+import 'dart:convert';
 
 class TrustedContact {
   final String email;
@@ -125,6 +127,30 @@ class _TrustedParentsPageState extends State<TrustedParentsPage> {
     if (_trustedContacts.length >= 5) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Maximum limit of 5 trusted parents reached. Please remove an existing contact to add a new one.')),
+      );
+      return;
+    }
+
+    // Check if email exists using secure email index collection
+    try {
+      // Hash the email for privacy (lowercase for consistency)
+      final emailBytes = utf8.encode(email.toLowerCase());
+      final emailHash = sha256.convert(emailBytes).toString();
+      
+      final doc = await _firestore
+          .collection('user_emails')
+          .doc(emailHash)
+          .get();
+      
+      if (!doc.exists) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('This email is not registered in our system. Only registered users can be added as trusted parents.')),
+        );
+        return;
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error verifying email: $e')),
       );
       return;
     }

@@ -88,34 +88,86 @@ class _NotificationsPageState extends State<NotificationsPage> {
     try {
       final user = _auth.currentUser;
       if (user != null) {
-        // Get user's trusted contacts to see if they are the recipient
+        // Get user's email to find emergency events where they are a trusted contact
         final userDoc = await _firestore.collection('users').doc(user.uid).get();
         final userData = userDoc.data() as Map<String, dynamic>?;
         
         if (userData != null) {
-          final trustedContactsList = userData['trustedContacts'] as List<dynamic>?;
-          final trustedContacts = trustedContactsList
-              ?.map((contact) => contact as Map<String, dynamic>?)
-              .where((contact) => contact != null)
-              .cast<Map<String, dynamic>>()
-              .toList() ?? [];
+          final userEmail = userData['email']?.toString() ?? '';
           
-          // Query emergency events where this user is a trusted contact
-          // For now, we'll show all emergency events (in a real app, you'd filter by trusted contacts)
-          final snapshot = await _firestore
-              .collection('emergency_events')
-              .orderBy('timestamp', descending: true)
-              .limit(50)
-              .get();
-          
-          final alerts = snapshot.docs
-              .map((doc) => EmergencyAlert.fromFirestore(doc))
-              .toList();
-          
-          setState(() {
-            _alerts = alerts;
-            _isLoading = false;
-          });
+          if (userEmail.isNotEmpty) {
+            // First try to get user-specific notifications (new secure approach)
+            try {
+              final userNotificationsSnapshot = await _firestore
+                  .collection('user_notifications')
+                  .doc(user.uid)
+                  .collection('notifications')
+                  .orderBy('timestamp', descending: true)
+                  .limit(50)
+                  .get();
+              
+              if (userNotificationsSnapshot.docs.isNotEmpty) {
+                final alerts = userNotificationsSnapshot.docs
+                    .map((doc) => EmergencyAlert.fromFirestore(doc))
+                    .toList();
+                
+                setState(() {
+                  _alerts = alerts;
+                  _isLoading = false;
+                });
+                return;
+              }
+            } catch (e) {
+              print('User notifications not available, falling back to filtered approach: $e');
+            }
+            
+            // Fallback: Query all emergency events and filter for trusted contacts (for admin app compatibility)
+            final snapshot = await _firestore
+                .collection('emergency_events')
+                .orderBy('timestamp', descending: true)
+                .limit(50)
+                .get();
+            
+            // Filter events where the current user is a trusted contact of the sender
+            final filteredAlerts = <EmergencyAlert>[];
+            
+            for (final doc in snapshot.docs) {
+              final alert = EmergencyAlert.fromFirestore(doc);
+              
+              // Get the sender's trusted contacts to check if current user is included
+              final senderDoc = await _firestore.collection('users').doc(alert.senderUid).get();
+              final senderData = senderDoc.data() as Map<String, dynamic>?;
+              
+              if (senderData != null) {
+                final trustedContactsList = senderData['trustedContacts'] as List<dynamic>?;
+                final trustedContacts = trustedContactsList
+                    ?.map((contact) => contact as Map<String, dynamic>?)
+                    .where((contact) => contact != null)
+                    .cast<Map<String, dynamic>>()
+                    .toList() ?? [];
+                
+                // Check if current user's email is in the trusted contacts
+                final isTrustedContact = trustedContacts.any((contact) {
+                  final contactEmail = contact['email']?.toString() ?? '';
+                  return contactEmail.toLowerCase() == userEmail.toLowerCase();
+                });
+                
+                if (isTrustedContact) {
+                  filteredAlerts.add(alert);
+                }
+              }
+            }
+            
+            setState(() {
+              _alerts = filteredAlerts;
+              _isLoading = false;
+            });
+          } else {
+            setState(() {
+              _alerts = [];
+              _isLoading = false;
+            });
+          }
         }
       }
     } catch (e) {
