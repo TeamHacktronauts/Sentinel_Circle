@@ -18,13 +18,15 @@ class NotificationService {
   // OneSignal REST API Key (from .env file)
   static final String _oneSignalApiKey = dotenv.env['ONESIGNAL_API_KEY'] ?? 
       String.fromEnvironment('ONESIGNAL_API_KEY', defaultValue: 'YOUR_ONESIGNAL_REST_API_KEY');
-  static const String _appId = '79f23d2b-5e1a-4e67-824d-218381c8ddb9';
+  // OneSignal App ID (from .env file)
+  static final String _appId = dotenv.env['ONESIGNAL_APP_ID'] ?? 
+      String.fromEnvironment('ONESIGNAL_APP_ID', defaultValue: 'YOUR_ONESIGNAL_APP_ID');
 
   // Initialize OneSignal
   Future<void> initializeNotifications() async {
     try {
       // Initialize OneSignal
-      OneSignal.initialize('79f23d2b-5e1a-4e67-824d-218381c8ddb9');
+      OneSignal.initialize(_appId);
       
       // Request permission
       await OneSignal.Notifications.requestPermission(true);

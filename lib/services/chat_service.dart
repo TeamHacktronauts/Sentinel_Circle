@@ -6,7 +6,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:file_picker/file_picker.dart';
 
 class ChatService {
-  final String endpoint = 'https://mxtuvmnpetwhdgcfefbf.supabase.co/functions/v1/chat-proxy';
+  final String endpoint = '${dotenv.env['SUPABASE_URL']}/functions/v1/chat-proxy';
   final String anonKey = dotenv.env['SUPABASE_ANON_KEY'] ?? ''; // JWT token from .env
 
   Future<String> sendMessage(
